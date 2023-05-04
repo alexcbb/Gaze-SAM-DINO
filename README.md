@@ -24,6 +24,13 @@ pip install ultralytics
 ```
 ## Experiments
 
+### Pre-process the dataset
+We first need to pre-process the YCB-Video dataset in order to make it possible to train YOLO on it. We follow the formatting given [here](https://docs.ultralytics.com/yolov5/tutorials/train_custom_data/#train-on-custom-data) to format the dataset. To launch the pre-processing, launch the following script :
+```
+python3 process_ycb.py --dataset_path <PATH_TO YCB_Video_Dataset FOLDER> --data_config <PATH_TO_CONFIG_YAML_FILE>
+```
+
+
 ### Train Yolo
 For this project, we will first train Yolo to detect YCB objects on the images. We will then train it on the YCB dataset with the `train_yolo.py` script.
 First of all, download the YOLOv8n model that we will fine-tune on YCB-video dataset : [download](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt).

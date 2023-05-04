@@ -10,4 +10,5 @@ if __name__ == '__main__':
     parser.add_argument('dataset_path', type=str, help='Path to the YCB_dataset')
     parser.add_argument('', type=int, help='')
 
+    
 
