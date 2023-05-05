@@ -1,6 +1,6 @@
 import argparse
 import os
-
+import random
 
 
 """
@@ -42,6 +42,12 @@ def change_bbox_format(array, dataset_path):
                 f.write(obj[0] + f" {x} {y} {w} {h}\n")
         f.close()
 
+def delete_random_values(array, ratio):
+    number_values = int(len(array) * ratio)
+    for i in range(number_values):
+        array.pop(random.randrange(len(array)))
+    return array
+
 if __name__ == '__main__':
     # Arguments
     parser = argparse.ArgumentParser(
@@ -68,7 +74,7 @@ if __name__ == '__main__':
     with open(train_set_path, "r") as f:
         for line in f.readlines():
             line = line.strip()
-            image_path = "/data/" + line
+            image_path = args.dataset_path + "/data/" + line + "-color.png"
             train_set.append(image_path)
     f.close()
 
@@ -76,17 +82,20 @@ if __name__ == '__main__':
     with open(val_set_path, "r") as f:
         for line in f.readlines():
             line = line.strip()
-            image_path = "/data/" + line
+            image_path = args.dataset_path + "/data/" + line + "-color.png"
             val_set.append(image_path)
     f.close()
+
+    train_set = delete_random_values(train_set, 0.9)
+    val_set = delete_random_values(val_set, 0.9)
 
     # Create two new files containing path to the images
     write_array_in_file(train_set, args.dataset_path + "/train.txt")
     write_array_in_file(val_set, args.dataset_path + "/val.txt")
 
     # We change and recreate bounding box files : x1 y1 x2 y2 --> x y w h
-    change_bbox_format(train_set, args.dataset_path)
-    change_bbox_format(val_set, args.dataset_path)
+    #change_bbox_format(train_set, args.dataset_path)
+    #change_bbox_format(val_set, args.dataset_path)
 
     # We finally create the .yaml file for the training of YOLO
     with open(args.data_config, "w") as f:
@@ -97,9 +106,11 @@ if __name__ == '__main__':
         f.write(f"val: {val_path}\n") # set relative path to val .txt file
 
         f.write("\n")
+        f.write("names: \n")
         i = 0
         for class_name in classes_names:
-            f.write(f"{i}: {class_name}\n")
+            f.write(f"  {i}: {class_name}")
+            i+=1
     f.close()
 
 
