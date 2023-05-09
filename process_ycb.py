@@ -55,6 +55,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('--dataset_path', type=str, help='Path to the dataset root folder (insided YCB_Video_Dataset)')
     parser.add_argument('--data_config', type=str, help='.yaml config file used to train the model')
+    parser.add_argument('--prefix', type=str, default="", help='.yaml config file used to train the model')
     
     args = parser.parse_args()
 
@@ -86,12 +87,12 @@ if __name__ == '__main__':
             val_set.append(image_path)
     f.close()
 
-    train_set = delete_random_values(train_set, 0.9)
-    val_set = delete_random_values(val_set, 0.9)
+    """train_set = delete_random_values(train_set, 0.9)
+    val_set = delete_random_values(val_set, 0.9)"""
 
     # Create two new files containing path to the images
-    write_array_in_file(train_set, args.dataset_path + "/train.txt")
-    write_array_in_file(val_set, args.dataset_path + "/val.txt")
+    write_array_in_file(train_set, args.dataset_path + "/" + args.prefix + "train.txt")
+    write_array_in_file(val_set, args.dataset_path + "/" + args.prefix + "val.txt")
 
     # We change and recreate bounding box files : x1 y1 x2 y2 --> x y w h
     #change_bbox_format(train_set, args.dataset_path)
@@ -99,8 +100,8 @@ if __name__ == '__main__':
 
     # We finally create the .yaml file for the training of YOLO
     with open(args.data_config, "w") as f:
-        train_path = args.dataset_path + "/train.txt"
-        val_path = args.dataset_path + "/val.txt"
+        train_path = args.dataset_path  + "/" + args.prefix + "train.txt"
+        val_path = args.dataset_path  + "/" + args.prefix + "val.txt"
         f.write(f"path: {args.dataset_path}\n") # set path to dataset
         f.write(f"train: {train_path}\n") # set relative path to train .txt file
         f.write(f"val: {val_path}\n") # set relative path to val .txt file
