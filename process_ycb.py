@@ -86,8 +86,8 @@ if __name__ == '__main__':
             val_set.append(image_path)
     f.close()
 
-    train_set = delete_random_values(train_set, 0.9)
-    val_set = delete_random_values(val_set, 0.9)
+    """train_set = delete_random_values(train_set, 0.9)
+    val_set = delete_random_values(val_set, 0.9)"""
 
     # Create two new files containing path to the images
     write_array_in_file(train_set, args.dataset_path + "/train.txt")
