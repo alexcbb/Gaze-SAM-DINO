@@ -10,6 +10,7 @@ import matplotlib.patches as patches
 import torch
 import cv2
 import numpy as np
+from ultralytics.yolo.data.augment import LetterBox
 
 def bbox_unnormalize(bbox, img_width, img_height):
     x, y, w, h = bbox[0], bbox[1], bbox[2], bbox[3]
@@ -19,7 +20,7 @@ def bbox_unnormalize(bbox, img_width, img_height):
     y = y * img_height
     return x, y, w, h
 
-
+# Functions obtained from : https://inside-machinelearning.com/en/bounding-boxes-python-function/
 def box_label(image, box, label='', color=(128, 128, 128), txt_color=(255, 255, 255)):
   lw = max(round(sum(image.shape) / 2 * 0.003), 2)
   p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
@@ -38,7 +39,6 @@ def box_label(image, box, label='', color=(128, 128, 128), txt_color=(255, 255, 
                 thickness=tf,
                 lineType=cv2.LINE_AA)
 
-# Function obtained from : https://inside-machinelearning.com/en/bounding-boxes-python-function/
 def plot_bboxes(image, boxes, score=True, conf=None):
     labels = {0: u'002_master_chef_can', 1: u'003_cracker_box', 2: u'004_sugar_box',3: u'005_tomato_soup_can', 4: u'006_mustard_bottle', 5: u'007_tuna_fish_can', 6: u'008_pudding_box', 7: u'009_gelatin_box', 8: u'010_potted_meat_can', 9: u'011_banana', 10: u'019_pitcher_base', 11: u'021_bleach_cleanser', 12: u'024_bowl', 13: u'025_mug', 14: u'035_power_drill', 15: u'036_wood_block', 16: u'037_scissors', 17: u'040_large_marker', 18: u'051_large_clamp', 19: u'052_extra_large_clamp', 20: u'061_foam_brick'}
     colors = [(89, 161, 197),(67, 161, 255),(19, 222, 24),(186, 55, 2),(167, 146, 11),(190, 76, 98),(130, 172, 179),(115, 209, 128),(204, 79, 135),(136, 126, 185),(209, 213, 45),(44, 52, 10),(101, 158, 121),(179, 124, 12),(25, 33, 189),(45, 115, 11),(73, 197, 184),(62, 225, 221),(32, 46, 52),(20, 165, 16),(54, 15, 57)]
@@ -61,6 +61,21 @@ def plot_bboxes(image, boxes, score=True, conf=None):
             box_label(image, box, label, color)
     return image
 
+# Functions obtained from SAM notebooks : https://github.com/facebookresearch/segment-anything/blob/main/notebooks/predictor_example.ipynb
+def show_box(box, ax):
+    x0, y0 = box[0], box[1]
+    w, h = box[2] - box[0], box[3] - box[1]
+    ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))    
+
+def show_mask(mask, ax, random_color=False):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        color = np.array([30/255, 144/255, 255/255, 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
+
 if __name__ == '__main__':
     # Arguments
     parser = argparse.ArgumentParser(
@@ -69,69 +84,70 @@ if __name__ == '__main__':
     parser.add_argument('--image_folder', type=str, help='Path to a folder containing images to test')
     parser.add_argument('--yolo_path', type=str, default="best.pt", help='Path to the trained YOLO model')
     parser.add_argument('--sam_path', type=str, default="sam_vit_h_4b8939.pth", help='Path to the SAM model')
+    parser.add_argument('--save_images', type=bool, default=False, help='Wether to save the images or not')
+    parser.add_argument('--res_path', type=str, default="res_seg/", help='Path to the folder where the results are stored')
+    parser.add_argument('--show_res', type=bool, default=True, help='Wether to show or not the resulting images')
 
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
 
     # Load SAM
-    """sam = sam_model_registry["default"](checkpoint=args.sam_path) # To use this model, you need to download it here : https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+    print("Load models...")
+    if args.sam_path == "sam_vit_b_01ec64.pth":
+        model_type = "vit_b"
+    elif args.sam_path == "sam_vit_h_4b8939.pth":
+        model_type = "default"
+    else:
+        model_type = "vit_l"
+        
+    sam = sam_model_registry[model_type](checkpoint=args.sam_path) # To use this model, you need to download it here : https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
     sam = sam.to(device) 
-    predictor = SamPredictor(sam)"""
+    predictor = SamPredictor(sam)
 
     # Load YOLO
     yolo = YOLO(args.yolo_path)
     yolo.to(device)
 
     # Extract all images name in the image folder
+    print("Models loaded ! Get images name...")
     images = [f for f in listdir(args.image_folder) if isfile(join(args.image_folder, f))]
 
+    print("Begin inference")
     for image_name in images:
-        start_time = datetime.now()
-
         # Open image
         image_path = args.image_folder + "/" + image_name
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        plt.imshow(image)
-        plt.show()
+        original_image = cv2.imread(image_path)
+        sam_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
-        # Predict bounding boxes
-        results = yolo.predict(image)
+        start_time = datetime.now()
+        results = yolo.predict(original_image, verbose=False)
+        predictor.set_image(sam_image)
 
-        # Set the image as input to SAM
-        #predictor.set_image(image)
-        #results = results[0]
-        #boxes = torch.tensor(res[0].boxes)#, device=predictor.device)
-
-        # Create a Rectangle patch
-        """for res in results:
-            for box in res.boxes:
-                box_pose = box.xywh[0].cpu()
-                color = np.random.rand(3) # generate a random color
-                rect = plt.Rectangle((box_pose[0], box_pose[1]), box_pose[2], box_pose[3], linewidth=2, edgecolor=color, facecolor='none')
-                ax.add_patch(rect)"""
+        # Plot the rectangles
         for res in results:
-            image = plot_bboxes(image, res.boxes.boxes)
-            print(image.shape)
-            plt.imshow(image)
-            plt.show()
-
-        """# Extract SAM predictions with bounding boxes
-        transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, image.shape[:2])
-        masks, _, _ = predictor.predict_torch(
+            #original_image = plot_bboxes(original_image, res.boxes.boxes)
+            transformed_boxes = predictor.transform.apply_boxes_torch(res.boxes.xyxy, sam_image.shape[:2])
+            masks, _, _ = predictor.predict_torch(
             point_coords=None,
             point_labels=None,
             boxes=transformed_boxes,
             multimask_output=False
-        )
-        end_time = datetime.now()
-        time_difference = (end_time - start_time).total_seconds() * 10**3
-        print("Inference time: ", time_difference, "ms")
+            )
+            end_time = datetime.now()
+            time_difference = (end_time - start_time).total_seconds() * 10**3
+            print("Inference time: ", time_difference, "ms")
+            
+            #plt.imshow(original_image)
 
-        print(masks)
-        print(masks.shape)"""
-
-
-
-
+            plt.figure(figsize=(10, 10))
+            plt.imshow(sam_image)
+            for mask in masks:
+                show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
+            for box in res.boxes.xyxy:
+                show_box(box.cpu().numpy(), plt.gca())
+            plt.axis('off')
+            if args.save_images:
+                plt.savefig(args.res_path + image_name, bbox_inches='tight')
+            if args.show_res:
+                plt.show()
