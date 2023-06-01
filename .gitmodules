@@ -1,0 +1,3 @@
+[submodule "dino_gaze/dinov2"]
+	path = dino_gaze/dinov2
+	url = https://github.com/facebookresearch/dinov2

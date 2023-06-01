@@ -1,5 +1,7 @@
 # Gaze-Segment-Anything-YCB-Video
-This project uses gaze information from VR-Headset to segment YCB objects from images. 
+This project uses gaze information from VR-Headset to segment YCB objects from images or to extract saliency information. 
+
+We perform some experiments using the Segment Anything Model (SAM) and DINO respectively for image segmentation and saliency extraction. 
 
 ## Installation
 The code requires `python>=3.8`, `pytorch>=1.7` and `torchvision>=0.8`. Please follow the instructions [here](https://pytorch.org/get-started/locally/) to install both PyTorch and TorchVision dependencies. Installing both PyTorch and TorchVision with CUDA support is strongly recommended.
@@ -22,10 +24,13 @@ Install Yolov8:
 ```
 pip install ultralytics
 ```
+
 ## Purpose of the project
 Segment Anything has demonstrated incredible zero-shot generalization capabilities to predict segmentation of objects on images given prompts. YOLOv8 model is a very powerful model for object detection that can also be used for object segmentation. However, while its training for object-detection is really easy to setup, its segmentation training is cumbersome because it needs a specific format not directly applicable to other downstream tasks. 
 
-In this project, we want to combine the capacity of YOLOv8 to detect objects with the incredible capacities of SAM to segment objects given a prompt to detect and segment objects from a given dataset (here the YCB-video dataset).
+DINO is a Vision Transformer model trained in a self-supervised manner that exhibited powerful zero-shot object-centric prior on images. We believe that combining the information from such pre-trained model with the Gaze information extracted from a VR Headset, we would obtain meaningful saliency maps.
+
+In this project, we want to combine the capacity of YOLOv8 to detect objects with the incredible capacities of SAM to segment objects given a prompt to detect and segment objects from a given dataset (here the YCB-video dataset). We also want to explore the use of saliency maps to help understanding the user intention. 
 
 This base project would then be used in combination with VR-Headset gaze in order to extract the objects of interest that a user is looking at.
 

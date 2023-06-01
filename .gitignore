@@ -5,6 +5,9 @@ res_*/
 *.png 
 *.jpg
 *.jpeg
+runs/
+*.onnx
+onnx_models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
