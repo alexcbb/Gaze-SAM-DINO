@@ -71,6 +71,7 @@ def onclickdino(event):
 
 def onclicksam(event):
     global img
+    global blured_image
     if event.button == 1 and event.inaxes is ax1:
         x_pos, y_pos = int(event.xdata), int(event.ydata)
         
@@ -88,8 +89,9 @@ def onclicksam(event):
         time_difference = (end_time - start_time).total_seconds() * 10**3
         print(f"Inference time : {time_difference}ms")
         mask = update_distance(masks[0].astype(np.float32), x_pos, y_pos)
-
+        blured_image = apply_focus_blur(img, mask, blur_amount=25)
         ax2.imshow(mask)
+        ax3.imshow(blured_image)
         plt.draw()  
 
 def update_distance(mask, fade_x, fade_y, fade_factor=0.5):
@@ -107,6 +109,12 @@ def update_distance(mask, fade_x, fade_y, fade_factor=0.5):
                 mask[y, x] *= fade_factor * fade
 
     return mask
+
+def apply_focus_blur(image, mask, blur_amount):
+    blurred_image = cv2.GaussianBlur(image, (blur_amount, blur_amount), 0)
+    result = image.copy()
+    result[mask<=0] = blurred_image[mask<=0]
+    return result
 
 if __name__ == '__main__':
     # Arguments
@@ -161,9 +169,10 @@ if __name__ == '__main__':
         img = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
         # Show images
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
         ax1.imshow(img) 
         ax2.imshow(img)
+        ax3.imshow(img)
 
         # Connect canvas to a clicking event for visualisation
         cid = fig.canvas.mpl_connect('button_press_event', onclicksam)
