@@ -3,145 +3,153 @@ from torchvision import transforms as T
 from datetime import datetime
 from PIL import Image
 import numpy as np
+import argparse
+from segment_anything import SamPredictor, sam_model_registry
+from dinov2.dinov2.models.vision_transformer import vit_small
+import cv2
 
-
-from transformers import ViTImageProcessor, ViTModel
 from matplotlib import pyplot as plt
 # Content of this script obtained from : https://github.com/facebookresearch/dinov2/issues/2 and https://www.kaggle.com/code/stpeteishii/dino-visualize-self-attention-sample/notebook
 
 # Return the id of the patch given the pixel's position
-def get_patch_id(patch_size, pos):
-    return (pos[0]//patch_size[0], pos[1]//patch_size[1])
+def get_patch_id(patch_size, x, y, img_w, img_h):
+    max_x_id = img_w // patch_size 
+    id = (x // patch_size) + (y // patch_size) * max_x_id
+    return id
 
 # TODO : create a function that extract the attention matrix + the final attention
-def get_last_attention_layer(model, image):
-    x = model.patch_embed(image)
-    nb_blocks = len(model.blocks)
-    for i in range(nb_blocks-1):
-        x = model.blocks[i](x)
-    x = model.blocks[-1].norm1(x)
-    attn = model.blocks[-1].attn(x)
-    return attn
+
+def onclickdino(event):
+    global img
+    if event.button == 1 and event.inaxes is ax1:
+        x_pos, y_pos = int(event.xdata), int(event.ydata)
+        image_transforms = T.Compose([
+            T.ToTensor(),
+            T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+        ])
+        t_img = image_transforms(img)
+        w, h = t_img.shape[1] - t_img.shape[1] % patch_size, t_img.shape[2] - t_img.shape[2] % patch_size
+        t_img = t_img[:, :w, :h].unsqueeze(0).to(device)
+
+        w_featmap = t_img.shape[-2] // patch_size
+        h_featmap = t_img.shape[-1] // patch_size
+
+    
+        start_time = datetime.now()
+        with torch.no_grad():
+            attentions = model.get_last_self_attention(t_img) 
+        end_time = datetime.now()
+        time_difference = (end_time - start_time).total_seconds() * 10**3
+        print(f"Inference time : {time_difference}ms")
+        
+        nh = attentions.shape[1]
+        patch_id = get_patch_id(patch_size, x_pos, y_pos, w, h)
+        print(f"Id of the clicked patch :{patch_id}")
+
+        attentions = attentions[0, :, patch_id, 1:].reshape(nh, -1) # TODO : change the value 155 with the right one 
+
+        val, idx = torch.sort(attentions)
+        val /= torch.sum(val, dim=1, keepdim=True)
+        cumval = torch.cumsum(val, dim=1)
+
+        threshold = 0.5
+        th_attn = cumval > (1 - threshold)
+        idx2 = torch.argsort(idx)
+        for head in range(nh):
+            th_attn[head] = th_attn[head][idx2[head]]
+            
+        th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
+
+        th_attn = torch.nn.functional.interpolate(th_attn.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+        th_attn_mean = np.mean(th_attn, axis=0)
+
+        attentions = attentions.reshape(nh, w_featmap, h_featmap)
+        attentions = torch.nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
+        attentions_mean = np.mean(attentions, axis=0)
+
+        ax2.imshow(attentions_mean)
+        ax3.imshow(th_attn_mean)
+        plt.draw()  
+
+def onclicksam(event):
+    global img
+    if event.button == 1 and event.inaxes is ax1:
+        x_pos, y_pos = int(event.xdata), int(event.ydata)
+        
+        input_point = np.array([[x_pos, y_pos]])
+        input_label = np.array([1])
+    
+        start_time = datetime.now()
+        model.set_image(img)
+        masks, _, _ = model.predict(
+            point_coords=input_point,
+            point_labels=input_label,
+            multimask_output=True,
+        )
+        end_time = datetime.now()
+        time_difference = (end_time - start_time).total_seconds() * 10**3
+        print(f"Inference time : {time_difference}ms")
+        
+        ax2.imshow(masks[0])
+        plt.draw()  
 
 if __name__ == '__main__':
-    """
-    batch_size = 1
-    num_attention_heads = 6
-    input_height, input_width = 242, 940
-    image = Image.open("./img.jpg")
+    # Arguments
+    parser = argparse.ArgumentParser(
+        description='Extract the saliency of objects on images with gaze information'
+    )
+    parser.add_argument('--sam_path', type=str, default="./../sam_vit_b_01ec64.pth", help='Path to the SAM model')
+    parser.add_argument('--dino_path', type=str, default="./../dinov2_vits14_pretrain.pth", help='Path to the dino model')
+    parser.add_argument('--model', type=str, default="dino", help='Model to use')
 
-    processor = ViTImageProcessor.from_pretrained('facebook/dino-vits8')
-    model = ViTModel.from_pretrained('facebook/dino-vits8')
-
-    print(model.config)
-
-    inputs = processor(images=image, return_tensors="pt") # https://huggingface.co/docs/transformers/model_doc/vit#transformers.ViTImageProcessor
-    with torch.no_grad():
-        outputs = model(**inputs, output_attentions=True) # https://huggingface.co/docs/transformers/model_doc/vit#transformers.ViTImageProcessor
-        last_attention_map = outputs.attentions[0]
-
-    resized_attention_maps = np.resize(last_attention_map, (batch_size, num_attention_heads, input_height, input_width))
-    normalized_attention_maps = resized_attention_maps / np.max(resized_attention_maps, axis=(2, 3), keepdims=True)
-
-    fig, axes = plt.subplots(nrows=num_attention_heads, ncols=1)
-
-    for i, ax in enumerate(axes):
-        ax.imshow(resized_attention_maps[0, i], interpolation='nearest')
-        ax.set_title(f'Attention Head {i+1}')
-
-    plt.show()
-
-    #w_feature_map = h_feature_map = 224 // 8 # = 28
-    #last_attention = last_attention.reshape(6, w_feature_map, h_feature_map)
-
-
-
-    """
+    args = parser.parse_args()
     patch_size = 14
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    #model = torch.hub.load('facebookresearch/dino:main', 'dino_vits16')
-    model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-    model.eval()
-    model.to(device)
 
-    # TODO load images or get video stream
-    img = Image.open("./ycb1.png")
+    image_path = "./../90139.png"
     
-    image_transforms = T.Compose([
-        T.ToTensor(),
-        T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    ])
-    t_img = image_transforms(img)
-    print(t_img.shape)
-    w, h = t_img.shape[1] - t_img.shape[1] % patch_size, t_img.shape[2] - t_img.shape[2] % patch_size
-    t_img = t_img[:, :w, :h].unsqueeze(0).to(device)
-    print(t_img.shape)
+    if args.model == 'dino':
+        # Load DINO model
+        model = vit_small(patch_size=patch_size,init_values=1.0, img_size=526, block_chunks=0)
+        model.load_state_dict(torch.load(args.dino_path))
+        for p in model.parameters():
+            p.requires_grad = False
+        model.eval()
+        model.to(device)
 
-    w_featmap = t_img.shape[-2] // patch_size
-    h_featmap = t_img.shape[-1] // patch_size
-    print(h_featmap)
-    print(w_featmap)
+        # Load image
+        img = Image.open(image_path)
 
-    #print(model.blocks[-1].attn.qkv) # extract qkv values !
-    print(model.blocks[-1])
+        # Show images
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+        ax1.imshow(img) 
+        ax2.imshow(img)
+        ax3.imshow(img)
 
-    start_time = datetime.now()
-    with torch.no_grad():
-        attentions = get_last_attention_layer(model, t_img) # TODO : find a way to do the same with DINOv2
-    end_time = datetime.now()
-    time_difference = (end_time - start_time).total_seconds() * 10**3
-    print("Inference time: ", time_difference, "ms")
-    """start_time = datetime.now()
-    with torch.no_grad():
-        attentions = model.get_last_selfattention(t_img) # TODO : find a way to do the same with DINOv2
-    end_time = datetime.now()
-    time_difference = (end_time - start_time).total_seconds() * 10**3
-    print("Inference time: ", time_difference, "ms")"""
-    
-    nh = attentions.shape[1]
-    print(attentions.shape)
+        # Connect canvas to a clicking event for visualisation
+        cid = fig.canvas.mpl_connect('button_press_event', onclickdino)
+        plt.show()
+    else:
+        if args.sam_path.split('/')[-1] == "sam_vit_b_01ec64.pth":
+            model_type = "vit_b"
+        elif args.sam_path.split('/')[-1] == "sam_vit_h_4b8939.pth":
+            model_type = "default"
+        else:
+            model_type = "vit_l"
+        sam = sam_model_registry[model_type](checkpoint=args.sam_path) # To use this model, you need to download it here : https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+        sam.to(device)
+        model = SamPredictor(sam)
 
-    # Only keep the output patch attention
-    # [1, 6, 901, 901] => [6, 900]
-    attentions = attentions[0, :, 786, 1:].reshape(nh, -1) # TODO : change the value 155 with the right one 
+        # Load image
+        original_image = cv2.imread(image_path)
+        img = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
-    # Only keep a certain purcentage of the mass
-    val, idx = torch.sort(attentions)
-    val /= torch.sum(val, dim=1, keepdim=True)
-    cumval = torch.cumsum(val, dim=1)
+        # Show images
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        ax1.imshow(img) 
+        ax2.imshow(img)
 
-    # We visualize masks obtained by thresholding 
-    # the self-attention maps to keep xx% of the mass.
-    threshold = 0.2 
-    th_attn = cumval > (1 - threshold)
-    idx2 = torch.argsort(idx)
-    for head in range(nh):
-        th_attn[head] = th_attn[head][idx2[head]]
-        
-    th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
-
-    # interpolate
-    th_attn = torch.nn.functional.interpolate(th_attn.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
-
-    attentions = attentions.reshape(nh, w_featmap, h_featmap)
-    attentions = torch.nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
-    attentions_mean = np.mean(attentions, axis=0)
-
-    plt.figure(figsize=(15,15), dpi=200)
-
-    plt.subplot(3, 1, 1)
-    plt.title("Original",size=6)
-    plt.imshow(t_img.cpu().numpy()[0].transpose((1, 2, 0)))
-    plt.axis("off")
-
-    plt.subplot(3, 1, 2)
-    plt.title("Attentions Mean",size=6)
-    plt.imshow(attentions_mean)
-    plt.axis("off")
-
-    plt.subplot(3, 1, 3)
-    plt.title("Attention",size=6)
-    plt.imshow(attentions[-1])
-    plt.axis("off")
-    plt.show()
+        # Connect canvas to a clicking event for visualisation
+        cid = fig.canvas.mpl_connect('button_press_event', onclicksam)
+        plt.show()
     
