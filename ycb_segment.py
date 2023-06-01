@@ -6,11 +6,15 @@ from segment_anything import SamPredictor, sam_model_registry
 from ultralytics import YOLO
 from datetime import datetime
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import torch
 import cv2
 import numpy as np
-from ultralytics.yolo.data.augment import LetterBox
+from segment_anything.utils.onnx import SamOnnxModel
+
+import onnxruntime
+from onnxruntime.quantization import QuantType
+from onnxruntime.quantization.quantize import quantize_dynamic
+
 
 def bbox_unnormalize(bbox, img_width, img_height):
     x, y, w, h = bbox[0], bbox[1], bbox[2], bbox[3]
@@ -84,6 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--image_folder', type=str, help='Path to a folder containing images to test')
     parser.add_argument('--yolo_path', type=str, default="best.pt", help='Path to the trained YOLO model')
     parser.add_argument('--sam_path', type=str, default="sam_vit_h_4b8939.pth", help='Path to the SAM model')
+    parser.add_argument('--onnx_model_path', type=str, default="big_sam_quant.onnx", help='Path to the SAM model on onnx format')
     parser.add_argument('--save_images', type=bool, default=False, help='Wether to save the images or not')
     parser.add_argument('--res_path', type=str, default="res_seg/", help='Path to the folder where the results are stored')
     parser.add_argument('--show_res', type=bool, default=True, help='Wether to show or not the resulting images')
@@ -102,6 +107,7 @@ if __name__ == '__main__':
         model_type = "vit_l"
         
     sam = sam_model_registry[model_type](checkpoint=args.sam_path) # To use this model, you need to download it here : https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+    #ort_session = onnxruntime.InferenceSession(args.onnx_model_path)
     sam = sam.to(device) 
     predictor = SamPredictor(sam)
 
@@ -121,33 +127,62 @@ if __name__ == '__main__':
         sam_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
         start_time = datetime.now()
-        results = yolo.predict(original_image, verbose=False)
+        results = yolo.predict(original_image, verbose=False, conf=0.75)
         predictor.set_image(sam_image)
 
         # Plot the rectangles
-        for res in results:
-            #original_image = plot_bboxes(original_image, res.boxes.boxes)
-            transformed_boxes = predictor.transform.apply_boxes_torch(res.boxes.xyxy, sam_image.shape[:2])
-            masks, _, _ = predictor.predict_torch(
-            point_coords=None,
-            point_labels=None,
-            boxes=transformed_boxes,
-            multimask_output=False
-            )
-            end_time = datetime.now()
-            time_difference = (end_time - start_time).total_seconds() * 10**3
-            print("Inference time: ", time_difference, "ms")
-            
-            #plt.imshow(original_image)
+        res = results[0]
+        #original_image = plot_bboxes(original_image, res.boxes.boxes)
+        """image_embedding = predictor.get_image_embedding().cpu().numpy()
 
-            plt.figure(figsize=(10, 10))
-            plt.imshow(sam_image)
-            for mask in masks:
-                show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
-            for box in res.boxes.xyxy:
-                show_box(box.cpu().numpy(), plt.gca())
-            plt.axis('off')
-            if args.save_images:
-                plt.savefig(args.res_path + image_name, bbox_inches='tight')
-            if args.show_res:
-                plt.show()
+        # Set the inputs of the model as explained in : https://github.com/facebookresearch/segment-anything/blob/main/notebooks/onnx_model_example.ipynb
+        nb_boxes = len(res.boxes.xyxy)
+        onnx_coord = res.boxes.xyxy.cpu().numpy().reshape(nb_boxes * 2, 2)
+        onnx_coord = np.concatenate([onnx_coord, np.array([[0.0, 0.0]])], axis=0)[None, :, :]
+
+        onnx_label = np.array([nb_boxes,3]).astype(np.float32)
+        onnx_label = np.concatenate([onnx_label, np.array([-1])], axis=0)[None, :].astype(np.float32)
+
+        onnx_coord = predictor.transform.apply_coords(onnx_coord, sam_image.shape[:2])
+        print(onnx_coord.shape)
+
+        onnx_mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+        onnx_has_mask_input = np.zeros(1, dtype=np.float32)
+
+        ort_inputs = {
+            "image_embeddings": image_embedding,
+            "point_coords": onnx_coord,
+            "point_labels": onnx_label,
+            "mask_input": onnx_mask_input,
+            "has_mask_input": onnx_has_mask_input,
+            "orig_im_size": np.array(sam_image.shape[:2], dtype=np.float32)
+        }
+
+        masks, _, low_res_logits = ort_session.run(None, ort_inputs)
+        masks = masks > predictor.model.mask_threshold
+
+        """
+        #before onnx
+
+        transformed_boxes = predictor.transform.apply_boxes_torch(res.boxes.xyxy, sam_image.shape[:2])
+        masks, _, _ = predictor.predict_torch(
+        point_coords=None,
+        point_labels=None,
+        boxes=transformed_boxes,
+        multimask_output=False
+        )
+        end_time = datetime.now()
+        time_difference = (end_time - start_time).total_seconds() * 10**3
+        print("Inference time: ", time_difference, "ms")
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(sam_image)
+        for mask in masks:
+            show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
+        for box in res.boxes.xyxy:
+            show_box(box.cpu().numpy(), plt.gca())
+        plt.axis('off')
+        if args.save_images:
+            plt.savefig(args.res_path + image_name, bbox_inches='tight')
+        """if args.show_res:
+            plt.show()"""
