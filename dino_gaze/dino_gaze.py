@@ -17,8 +17,6 @@ def get_patch_id(patch_size, x, y, img_w, img_h):
     id = (x // patch_size) + (y // patch_size) * max_x_id
     return id
 
-# TODO : create a function that extract the attention matrix + the final attention
-
 def onclickdino(event):
     global img
     if event.button == 1 and event.inaxes is ax1:
@@ -89,9 +87,26 @@ def onclicksam(event):
         end_time = datetime.now()
         time_difference = (end_time - start_time).total_seconds() * 10**3
         print(f"Inference time : {time_difference}ms")
-        
-        ax2.imshow(masks[0])
+        mask = update_distance(masks[0].astype(np.float32), x_pos, y_pos)
+
+        ax2.imshow(mask)
         plt.draw()  
+
+def update_distance(mask, fade_x, fade_y, fade_factor=0.5):
+    height, width = mask.shape[:2]
+    max_distance = max(height, width) / 4 # TODO : change this parameter to a better one ?
+
+    for y in range(height):
+        for x in range(width):
+            distance = np.sqrt((x - fade_x) ** 2 + (y - fade_y) ** 2)
+
+            if distance > max_distance:
+                mask[y, x] = 0
+            else:
+                fade = (max_distance - distance) / max_distance
+                mask[y, x] *= fade_factor * fade
+
+    return mask
 
 if __name__ == '__main__':
     # Arguments
@@ -101,12 +116,13 @@ if __name__ == '__main__':
     parser.add_argument('--sam_path', type=str, default="./../sam_vit_b_01ec64.pth", help='Path to the SAM model')
     parser.add_argument('--dino_path', type=str, default="./../dinov2_vits14_pretrain.pth", help='Path to the dino model')
     parser.add_argument('--model', type=str, default="dino", help='Model to use')
+    parser.add_argument('--image_path', type=str, default="./../90139.png", help='Image path')
 
     args = parser.parse_args()
     patch_size = 14
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    image_path = "./../90139.png"
+    image_path = args.image_path
     
     if args.model == 'dino':
         # Load DINO model
