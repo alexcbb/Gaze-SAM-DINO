@@ -2,7 +2,6 @@
 *.pth
 res_*/
 *.onnx
-*.png 
 *.jpg
 *.jpeg
 runs/

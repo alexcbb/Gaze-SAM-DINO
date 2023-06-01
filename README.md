@@ -3,6 +3,9 @@ This project uses gaze information from VR-Headset to segment YCB objects from i
 
 We perform some experiments using the Segment Anything Model (SAM) and DINO respectively for image segmentation and saliency extraction. 
 
+![Gaze visualisation](assets/gaze.gif)
+![Yolo combined with SAM](assets/yolo_sam.png)
+
 ## Installation
 The code requires `python>=3.8`, `pytorch>=1.7` and `torchvision>=0.8`. Please follow the instructions [here](https://pytorch.org/get-started/locally/) to install both PyTorch and TorchVision dependencies. Installing both PyTorch and TorchVision with CUDA support is strongly recommended.
 
