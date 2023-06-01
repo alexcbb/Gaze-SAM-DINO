@@ -1,5 +1,5 @@
 from PIL import Image 
-import os, sys, argparse
+import argparse
 from os import listdir
 from os.path import isfile, join
 from segment_anything import SamPredictor, sam_model_registry

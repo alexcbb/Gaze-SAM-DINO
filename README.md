@@ -1,4 +1,4 @@
-# Gaze-Segment-Anything-YCB-Video
+# Gaze-SAM-DINO
 This project uses gaze information from VR-Headset to segment YCB objects from images or to extract saliency information. 
 
 We perform some experiments using the Segment Anything Model (SAM) and DINO respectively for image segmentation and saliency extraction. 
